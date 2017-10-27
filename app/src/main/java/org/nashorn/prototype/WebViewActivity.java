@@ -3,6 +3,7 @@ package org.nashorn.prototype;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -31,9 +32,9 @@ import java.net.URLDecoder;
 
 /* 스마트폰 와이파이 on되어있어야 하고 아래 ip가 동일해야 한다. */
 public class WebViewActivity extends AppCompatActivity {
-    private static final String HOME_URL = "http://172.16.1.253/#!/";
-    private static final String SIGNUP_URL = "http://172.16.1.253/#!/signup";
-    private static final String USERLIST_URL = "http://172.16.1.253/#!/user/list";
+    private static final String HOME_URL = "http://172.16.1.253:9000/#!/";
+    private static final String SIGNUP_URL = "http://172.16.1.253:9000/#!/signup";
+    private static final String USERLIST_URL = "http://172.16.1.253:9000/#!/user/list";
     private WebView webView = null;
 
     final class WebBrowserClient extends WebChromeClient {
@@ -123,6 +124,25 @@ public class WebViewActivity extends AppCompatActivity {
         webView.setWebChromeClient(new WebBrowserClient());
         webView.setWebViewClient(new MyWebViewClient());
         webView.loadUrl(HOME_URL);
+
+        //로그인한 상태인지 확인하고, 비로그인이면 로그인 화면으로 전환
+        //SharedPreferences 다른 사람이 접근할 수 없는 영역(보안유지)
+        //native restful에서는 cookie,session사용안하므로->token이 해당역할 수행
+        SharedPreferences pref = getSharedPreferences("pref", MODE_PRIVATE);
+        if (pref.getString("token", "").equals("")) {
+            Intent intent = new Intent(WebViewActivity.this,
+                    LoginActivity.class);
+            startActivity(intent);
+            finish();   //login페이지를 뛰우도록 요청하고 자신을 종료처리(back해도 다시 돌아올수 없음)
+        }
+    }
+    //로그아웃
+    public void logout(View view) {
+        SharedPreferences pref = getSharedPreferences("pref", MODE_PRIVATE);
+        SharedPreferences.Editor editor = pref.edit();
+        editor.remove("token");
+        editor.commit();
+        finish();
     }
 
     public void goHome(View view) {
