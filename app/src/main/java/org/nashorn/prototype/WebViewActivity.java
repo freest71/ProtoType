@@ -21,16 +21,22 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.firebase.iid.FirebaseInstanceId;
+
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.util.Iterator;
 
-/* 스마트폰 와이파이 on되어있어야 하고 아래 ip가 동일해야 한다. */
 public class WebViewActivity extends AppCompatActivity {
     private static final String HOME_URL = "http://172.16.1.253:9000/#!/";
     private static final String SIGNUP_URL = "http://172.16.1.253:9000/#!/signup";
@@ -92,9 +98,9 @@ public class WebViewActivity extends AppCompatActivity {
                         TextView idText = (TextView)loginView.findViewById(R.id.user_id);
                         TextView passwordText = (TextView)loginView.findViewById(R.id.user_password);
                         Toast.makeText(WebViewActivity.this, idText.getText()+"/"+
-                                passwordText.getText(), Toast.LENGTH_LONG).show();
+                            passwordText.getText(), Toast.LENGTH_LONG).show();
                         new LoadUserList().execute(
-                                "http://172.16.1.248:52273/user/login",
+                                "http://172.16.1.253:52273/user/login",
                                 idText.getText().toString(),
                                 passwordText.getText().toString());
 
@@ -103,7 +109,7 @@ public class WebViewActivity extends AppCompatActivity {
                 loginDialog.setNegativeButton("취소", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        //webView.loadUrl(HOME_URL);
+                        webView.loadUrl(HOME_URL);
                     }
                 });
                 loginDialog.show();
@@ -126,15 +132,20 @@ public class WebViewActivity extends AppCompatActivity {
         webView.loadUrl(HOME_URL);
 
         //로그인한 상태인지 확인하고, 비로그인이면 로그인 화면으로 전환
-        //SharedPreferences 다른 사람이 접근할 수 없는 영역(보안유지)
-        //native restful에서는 cookie,session사용안하므로->token이 해당역할 수행
         SharedPreferences pref = getSharedPreferences("pref", MODE_PRIVATE);
         if (pref.getString("token", "").equals("")) {
             Intent intent = new Intent(WebViewActivity.this,
                     LoginActivity.class);
             startActivity(intent);
-            finish();   //login페이지를 뛰우도록 요청하고 자신을 종료처리(back해도 다시 돌아올수 없음)
+            finish();
         }
+
+        //교재 p707~p713 Firebase 설정 적용
+        //Registration ID
+        String regId = FirebaseInstanceId.getInstance().getToken();
+        Log.i("regId", regId);
+        new Nologin().execute(
+                "http://172.16.1.253:52273/user/nologin", regId);
     }
     //로그아웃
     public void logout(View view) {
@@ -217,5 +228,88 @@ public class WebViewActivity extends AppCompatActivity {
             } catch (Exception e) { e.printStackTrace(); }
             return output.toString();
         }
+    }
+
+    class Nologin extends AsyncTask<String,String,String> {
+        ProgressDialog dialog = new ProgressDialog(WebViewActivity.this);
+        @Override
+        protected String doInBackground(String... params) {
+            StringBuilder output = new StringBuilder();
+            try {
+                URL url = new URL(params[0]);
+                JSONObject postDataParams = new JSONObject();
+                postDataParams.put("device_token", params[1]);
+
+                HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+                if (conn != null) {
+                    conn.setConnectTimeout(10000);
+                    conn.setRequestMethod("POST");
+                    conn.setDoInput(true); conn.setDoOutput(true);
+                    OutputStream os = conn.getOutputStream();
+                    BufferedWriter writer = new BufferedWriter(
+                            new OutputStreamWriter(os, "UTF-8"));
+                    writer.write(getPostDataString(postDataParams));
+                    writer.flush();
+                    writer.close();
+                    os.close();
+                    BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(conn.getInputStream()));
+                    String line = null;
+                    while(true) {
+                        line = reader.readLine();
+                        if (line == null) break;
+                        output.append(line);
+                    }
+                    reader.close();
+                    conn.disconnect();
+                }
+            } catch (Exception e) { e.printStackTrace(); }
+            return output.toString();
+        }
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+            dialog.setMessage("로그인 중...");
+            dialog.show();
+        }
+        @Override
+        protected void onPostExecute(String s) {
+            super.onPostExecute(s);
+            dialog.dismiss();
+            try {
+                JSONObject json = new JSONObject(s);
+                if (json.getBoolean("result") == true) {//로그인 성공
+                } else {//로그인 실패
+                    Toast.makeText(WebViewActivity.this,
+                            json.getString("err"),
+                            Toast.LENGTH_SHORT).show();
+                }
+            } catch (Exception e) { e.printStackTrace(); }
+        }
+    }
+
+    public String getPostDataString(JSONObject params) throws Exception {
+
+        StringBuilder result = new StringBuilder();
+        boolean first = true;
+
+        Iterator<String> itr = params.keys();
+
+        while(itr.hasNext()){
+
+            String key= itr.next();
+            Object value = params.get(key);
+
+            if (first)
+                first = false;
+            else
+                result.append("&");
+
+            result.append(URLEncoder.encode(key, "UTF-8"));
+            result.append("=");
+            result.append(URLEncoder.encode(value.toString(), "UTF-8"));
+
+        }
+        return result.toString();
     }
 }
